@@ -10,6 +10,7 @@ e do compose, e compila o catálogo consolidado em:
 
 import sys
 import json
+import re
 import yaml
 from pathlib import Path
 
@@ -56,11 +57,25 @@ def build():
             if not manifest.get(field):
                 errors.append(f"[{d.name}] Campo obrigatório ausente: {field}")
 
+        app_id = str(manifest.get("id", d.name)).strip()
+        if not re.match(r'^[a-zA-Z0-9_-]+$', app_id):
+            errors.append(f"[{d.name}] ID de aplicativo inválido ou inseguro: '{app_id}'")
+            continue
+
         try:
             with open(compose_file, "r", encoding="utf-8") as f:
                 compose_content = f.read()
         except Exception as e:
             errors.append(f"[{d.name}] Erro ao ler docker-compose.yml: {e}")
+            continue
+
+        try:
+            parsed_compose = yaml.safe_load(compose_content)
+            if not isinstance(parsed_compose, dict) or "services" not in parsed_compose:
+                errors.append(f"[{d.name}] docker-compose.yml inválido: ausência do bloco 'services'")
+                continue
+        except Exception as e:
+            errors.append(f"[{d.name}] docker-compose.yml sintaxe YAML inválida: {e}")
             continue
 
         # Verifica se tem ícone local
@@ -70,6 +85,10 @@ def build():
             icon_url = f"https://raw.githubusercontent.com/Andrevictor20/saturn-apps/main/apps/{d.name}/icon.png"
             if not icon_path or icon_path == "icon.png":
                 icon_path = icon_url
+
+        if icon_path and str(icon_path).lower().startswith(("javascript:", "data:text/html", "vbscript:")):
+            errors.append(f"[{d.name}] URL de ícone insegura rejeitada: {icon_path}")
+            continue
 
         item = {
             "id": str(manifest.get("id", d.name)),
